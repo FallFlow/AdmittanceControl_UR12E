@@ -1,4 +1,4 @@
-from time import sleep
+from fcntl import F_DUPFD
 
 import numpy as np
 from rtde_control import RTDEControlInterface as RTDEControl
@@ -29,8 +29,10 @@ x_init = rtde_recv.getActualTCPPose()  # 当前TCP位姿就是笛卡儿空间下
 """
 
 print(x_init)
-x_d     = x_init    # 将期望位姿设置为初始位姿
-dx_d    = [0, 0, 0, 0, 0, 0]    # 期望速度设置为0，即希望机械臂保持在初始位姿不动
+x_d   = x_init               # 将期望位姿设置为初始位姿
+dx_d  = [0, 0, 0, 0, 0, 0]   # 期望速度设置为0，即希望机械臂保持在初始位姿不动
+ddx_d = [0, 0, 0, 0, 0, 0]
+F_d   = [0, 0, 0, 0, 0, 0]
 
 rtde_c.zeroFtSensor()   # 将末端六维力传感器置零
 time.sleep(1)
@@ -80,8 +82,8 @@ def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
     for i in range(6):
         if abs(F_ext[i]) < Deadband[i]:
             F_ext[i] = 0
-        # 应用导纳控制公式：M*ddx + D*(dx - dx_d) + K*(x - x_d) = F_ext
-        ddx_c[i] = ( F_ext[i] - D[i]*(dx[i] - dx_d[i]) - K[i]*(x[i] - x_d[i]) ) / M[i]
+        # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = -F_d - F_ext
+        ddx_c[i] = ( D[i]*(dx_d[i] - dx[i]) + K[i]*(x_d[i] - x[i]) - (-F_d[i] - F_ext[i]) ) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
         x_c[i] = x[i] + dx_c[i] * dt
     return x_c #, dx_c, ddx_c
