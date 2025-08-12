@@ -5,6 +5,7 @@ from rtde_control import RTDEControlInterface as RTDEControl
 from rtde_receive import RTDEReceiveInterface as RTDEReceive
 import time
 import Filter
+from scipy.spatial.transform import Rotation
 
 # 创建RTDE接收接口实例
 rtde_c = RTDEControl("192.168.0.100")
@@ -78,12 +79,20 @@ def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
     返回:
     目标笛卡儿位姿
     """
-    ddx_c = dx_c = x_c = [0, 0, 0, 0, 0, 0]
+    ddx_c = [0] * 6
+    dx_c = [0] * 6
+    x_c = [0] * 6
+    error = [0] * 6
+    error[0:3] = np.array(x_d[0:3]) - np.array(x[0:3])
+    q_d = Rotation.from_rotvec(x_d[3:6])
+    q_c = Rotation.from_rotvec(x[3:6])
+    error[3:6] = (q_d * q_c.inv()).as_rotvec()  # 计算四元数误差
+
     for i in range(6):
         if abs(F_ext[i]) < Deadband[i]:
             F_ext[i] = 0
         # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = -F_d - F_ext
-        ddx_c[i] = ( D[i]*(dx_d[i] - dx[i]) + K[i]*(x_d[i] - x[i]) - (-F_d[i] - F_ext[i]) ) / M[i] + ddx_d[i]
+        ddx_c[i] = ( D[i]*(dx_d[i] - dx[i]) + K[i]*(error[i]) - (-F_d[i] - F_ext[i]) ) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
         x_c[i] = x[i] + dx_c[i] * dt
     return x_c #, dx_c, ddx_c
