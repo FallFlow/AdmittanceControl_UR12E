@@ -5,17 +5,22 @@ from rtde_control import RTDEControlInterface as RTDEControl
 from rtde_receive import RTDEReceiveInterface as RTDEReceive
 import time
 import Filter
+from scipy.spatial.transform import Rotation as R
 
 # 创建RTDE接收接口实例
 rtde_c = RTDEControl("192.168.0.100")
 rtde_recv = RTDEReceive("192.168.0.100")  # 机器人IP
 
-pi = 3.14159267
+pi = np.pi
 
 # 初始化
-q_init = [pi/2, -pi/2, pi/2, -pi/2, pi/2, 0]   # 初始化机器人位置
+q_init = [pi/2, -pi/2, pi/2, -pi, -pi/2, 0]   # 初始化机器人位置
 rtde_c.moveJ(q_init)    # 在关节空间下线性移动到该位置
 time.sleep(1)   # 阻塞1秒使末端力传感器稳定
+
+# while True:
+#     print( rtde_recv.getActualTCPForce() )
+#     time.sleep(1)
 
 x_init = rtde_recv.getActualTCPPose()  # 当前TCP位姿就是笛卡儿空间下的初始位姿
 """
@@ -78,14 +83,47 @@ def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
     返回:
     目标笛卡儿位姿
     """
-    ddx_c = dx_c = x_c = [0, 0, 0, 0, 0, 0]
-    for i in range(6):
+    for i in range(6):  # 处理死区
         if abs(F_ext[i]) < Deadband[i]:
             F_ext[i] = 0
-        # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = -F_d - F_ext
-        ddx_c[i] = ( D[i]*(dx_d[i] - dx[i]) + K[i]*(x_d[i] - x[i]) - (-F_d[i] - F_ext[i]) ) / M[i] + ddx_d[i]
+
+    ddx_c = [0] * 6
+    dx_c = [0] * 6
+    deltax_c = [0] * 6
+    x_c = [0] * 6
+
+    x_e = [0] * 6
+    dx_e = [0] * 6
+    F_e = [0] * 6
+
+    x_e[0:3] = np.array(x_d[0:3]) - np.array(x[0:3])
+    rot_x_d = R.from_rotvec(x_d[3:6])
+    rot_x = R.from_rotvec(x[3:6])
+    x_e[3:6] = (rot_x_d * rot_x.inv()).as_rotvec()  # 计算四元数误差
+
+    dx_e[0:3] = np.array(dx_d[0:3]) - np.array(dx[0:3])
+    rot_dx_d = R.from_rotvec(dx_d[3:6])
+    rot_dx = R.from_rotvec(dx[3:6])
+    dx_e[3:6] = (rot_dx_d * rot_dx.inv()).as_rotvec()  # 计算四元数误差
+
+    F_e[0:3] = np.array(F_d[0:3]) - np.array(F_ext[0:3])
+    rot_F_d = R.from_rotvec(F_d[3:6])
+    rot_F_ext = R.from_rotvec(F_ext[3:6])
+    F_e[3:6] = (rot_F_d * rot_F_ext.inv()).as_rotvec()  # 计算四元数误差
+
+    for i in range(6):  # 位置的导纳控制
+        # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = (F_d - F_ext)
+        ddx_c[i] = ( D[i]* dx_e[i] + K[i]* x_e[i] - F_e[i] ) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
-        x_c[i] = x[i] + dx_c[i] * dt
+        deltax_c[i] = dx_c[i] * dt
+
+    for i in range(3, 6):   # 姿态的导纳控制
+        ddx_c[i] = (D[i] * dx_e[i] + K[i] * x_e[i] - F_e[i]) / M[i] + ddx_d[i]
+        dx_c[i] = dx[i] + ddx_c[i] * dt
+        deltax_c[i] = dx_c[i] * dt
+
+    x_c[0:3] = np.array(x[0:3]) + np.array(deltax_c[0:3])               # 位置可以直接做加法
+    x_c[3:6] = ( R.from_rotvec(deltax_c[3:6]) * rot_x ).as_rotvec()    # 姿态需要左乘
     return x_c #, dx_c, ddx_c
 
 # 初始化力补偿滤波器实例，这次对每个方向的力都设计一个补偿器
@@ -106,7 +144,7 @@ def ExternalForceComp():
     return
 
 
-
+print('Start')
 while True:
     t_start = rtde_c.initPeriod()   # 和结尾的rtde_c.waitPeriod(t_start)一起，控制while循环时间为dt
 
@@ -114,10 +152,12 @@ while True:
     dx = rtde_recv.getActualTCPSpeed()  # 获取当前TCP速度
     F_ext = F_ext_filter.update( rtde_recv.getActualTCPForce() ) - F_ext_comp   # 获取当前外部力
     ExternalForceComp() # 实时更新外部力补偿
-    print('Comp', F_ext_comp)
+    # print('Comp', F_ext_comp)
 
     x_c = AdmittanceControl(M, D, K, dt, x, dx, F_ext)  # 使用导纳控制器得到柔顺位姿
-    print('F_ext', F_ext)
+    # print('F_ext', F_ext)
+    print('                                                                                            ', end='\r')
+    print('x_c', [round(x, 3) for x in x_c], end='')
     rtde_c.servoL(x_c, 0, 0, dt, 0.03, 100) # 在笛卡儿空间中伺服到柔顺位姿
     # 也可以逆解得到关节空间的柔顺角度，再用servoJ伺服
     # q_c = rtde_c.getInverseKinematics(x_c)
