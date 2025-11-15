@@ -4,7 +4,7 @@ import numpy as np
 from rtde_control import RTDEControlInterface as RTDEControl
 from rtde_receive import RTDEReceiveInterface as RTDEReceive
 import time
-import Filter
+import filter_module
 from scipy.spatial.transform import Rotation as R
 
 # 创建RTDE接收接口实例
@@ -45,9 +45,9 @@ time.sleep(1)
 """
 传感器零漂补偿
 由于传感器零点漂移较严重，所以要进行零漂补偿
-滤波器的相关函数见Filter.py
+滤波器的相关函数见filter.py
 """
-comp_filter = Filter.MoveMeanFilter(window_size=15)   # 建立传感器力补偿的滤波器实例，使用滑动平均值滤波器，窗口长度15
+comp_filter = filter_module.MoveMeanFilter(window_size=15)   # 建立传感器力补偿的滤波器实例，使用滑动平均值滤波器，窗口长度15
 for i in range(100):    # 每0.02秒取一次末端六维力数据，循环100次，将滤波结果存在F_ext_comp中
     F_ext_comp = comp_filter.update(rtde_recv.getActualTCPForce())
     time.sleep(0.02)
@@ -58,7 +58,7 @@ F_ext = rtde_recv.getActualTCPForce() - F_ext_comp  #将实测的外部力减去
 由于传感器噪声较严重，所以要进行信号滤波
 滤波器的相关函数见Filter.py
 """
-F_ext_filter = Filter.RCLowPassFilter(alpha=0.35, initial_value=F_ext)  # 建立外部力低通滤波器实例
+F_ext_filter = filter_module.RCLowPassFilter(alpha=0.35, initial_value=F_ext)  # 建立外部力低通滤波器实例
 
 # 设计导纳控制参数
 M = [0.8, 0.8, 0.8, 0.01, 0.01, 0.01]   # 惯性矩阵
@@ -92,33 +92,33 @@ def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
     deltax_c = [0] * 6
     x_c = [0] * 6
 
-    x_e = [0] * 6
-    dx_e = [0] * 6
-    F_e = [0] * 6
+    e = [0] * 6
+    de = [0] * 6
+    e_F = [0] * 6
 
-    x_e[0:3] = np.array(x_d[0:3]) - np.array(x[0:3])
+    e[0:3] = np.array(x_d[0:3]) - np.array(x[0:3])
     rot_x_d = R.from_rotvec(x_d[3:6])
     rot_x = R.from_rotvec(x[3:6])
-    x_e[3:6] = (rot_x_d * rot_x.inv()).as_rotvec()  # 计算四元数误差
+    e[3:6] = (rot_x_d * rot_x.inv()).as_rotvec()  # 计算四元数误差
 
-    dx_e[0:3] = np.array(dx_d[0:3]) - np.array(dx[0:3])
+    de[0:3] = np.array(dx_d[0:3]) - np.array(dx[0:3])
     rot_dx_d = R.from_rotvec(dx_d[3:6])
     rot_dx = R.from_rotvec(dx[3:6])
-    dx_e[3:6] = (rot_dx_d * rot_dx.inv()).as_rotvec()  # 计算四元数误差
+    de[3:6] = (rot_dx_d * rot_dx.inv()).as_rotvec()  # 计算四元数误差
 
-    F_e[0:3] = np.array(F_d[0:3]) - np.array(F_ext[0:3])
+    e_F[0:3] = np.array(F_d[0:3]) - np.array(F_ext[0:3])
     rot_F_d = R.from_rotvec(F_d[3:6])
     rot_F_ext = R.from_rotvec(F_ext[3:6])
-    F_e[3:6] = (rot_F_d * rot_F_ext.inv()).as_rotvec()  # 计算四元数误差
+    e_F[3:6] = (rot_F_d * rot_F_ext.inv()).as_rotvec()  # 计算四元数误差
 
-    for i in range(6):  # 位置的导纳控制
+    for i in range(3):  # 位置的导纳控制
         # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = (F_d - F_ext)
-        ddx_c[i] = ( D[i]* dx_e[i] + K[i]* x_e[i] - F_e[i] ) / M[i] + ddx_d[i]
+        ddx_c[i] = ( D[i]* de[i] + K[i]* e[i] - e_F[i] ) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
         deltax_c[i] = dx_c[i] * dt
 
     for i in range(3, 6):   # 姿态的导纳控制
-        ddx_c[i] = (D[i] * dx_e[i] + K[i] * x_e[i] - F_e[i]) / M[i] + ddx_d[i]
+        ddx_c[i] = (D[i] * de[i] + K[i] * e[i] - e_F[i]) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
         deltax_c[i] = dx_c[i] * dt
 
@@ -127,12 +127,12 @@ def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
     return x_c #, dx_c, ddx_c
 
 # 初始化力补偿滤波器实例，这次对每个方向的力都设计一个补偿器
-comp = [Filter.MoveMeanFilter(window_size=5),
-        Filter.MoveMeanFilter(window_size=5),
-        Filter.MoveMeanFilter(window_size=5),
-        Filter.MoveMeanFilter(window_size=5),
-        Filter.MoveMeanFilter(window_size=5),
-        Filter.MoveMeanFilter(window_size=5),]
+comp = [filter_module.MoveMeanFilter(window_size=5),
+        filter_module.MoveMeanFilter(window_size=5),
+        filter_module.MoveMeanFilter(window_size=5),
+        filter_module.MoveMeanFilter(window_size=5),
+        filter_module.MoveMeanFilter(window_size=5),
+        filter_module.MoveMeanFilter(window_size=5),]
 
 def ExternalForceComp():
     """外部力补偿
