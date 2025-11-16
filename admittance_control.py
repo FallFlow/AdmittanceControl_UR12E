@@ -154,7 +154,7 @@ while True:
     ExternalForceComp() # 实时更新外部力补偿
     # print('Comp', F_ext_comp)
 
-    x_c = AdmittanceControl(M, D, K, dt, x, dx, F_ext)  # 使用导纳控制器得到柔顺位姿
+    x_c = admittance_control(M, D, K, dt, x, dx, F_ext)  # 使用导纳控制器得到柔顺位姿
     # print('F_ext', F_ext)
     print('                                                                                            ', end='\r')
     print('x_c', [round(x, 3) for x in x_c], end='')
