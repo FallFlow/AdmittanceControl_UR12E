@@ -68,7 +68,7 @@ dt= 0.02                                # 离散时间，后面会用到
 # 由于传感器噪声严重，设置死区
 Deadband = [1.5, 1.5, 1.5, 0.015, 0.05, 0.3]
 
-def AdmittanceControl(M, D, K, dt, x, dx, F_ext):
+def admittance_control(M, D, K, dt, x, dx, F_ext):
     """导纳控制
 
     参数:
