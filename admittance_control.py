@@ -83,9 +83,6 @@ def admittance_control(M, D, K, dt, x, dx, F_ext):
     返回:
     目标笛卡儿位姿
     """
-    for i in range(6):  # 处理死区
-        if abs(F_ext[i]) < Deadband[i]:
-            F_ext[i] = 0
 
     ddx_c = [0] * 6
     dx_c = [0] * 6
@@ -104,6 +101,9 @@ def admittance_control(M, D, K, dt, x, dx, F_ext):
     de[0:6] = np.array(dx_d[0:6]) - np.array(dx[0:6])
 
     e_F[0:6] = np.array(F_d[0:6]) - np.array(F_ext[0:6])
+    for i in range(6):  # 处理死区
+        if abs(e_F[i]) < Deadband[i]:
+            e_F[i] = 0
 
     for i in range(6):  # 导纳控制
         # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = (F_d - F_ext)
