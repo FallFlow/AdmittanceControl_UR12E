@@ -101,29 +101,18 @@ def admittance_control(M, D, K, dt, x, dx, F_ext):
     rot_x = R.from_rotvec(x[3:6])
     e[3:6] = (rot_x_d * rot_x.inv()).as_rotvec()  # 计算四元数误差
 
-    de[0:3] = np.array(dx_d[0:3]) - np.array(dx[0:3])
-    rot_dx_d = R.from_rotvec(dx_d[3:6])
-    rot_dx = R.from_rotvec(dx[3:6])
-    de[3:6] = (rot_dx_d * rot_dx.inv()).as_rotvec()  # 计算四元数误差
+    de[0:6] = np.array(dx_d[0:6]) - np.array(dx[0:6])
 
-    e_F[0:3] = np.array(F_d[0:3]) - np.array(F_ext[0:3])
-    rot_F_d = R.from_rotvec(F_d[3:6])
-    rot_F_ext = R.from_rotvec(F_ext[3:6])
-    e_F[3:6] = (rot_F_d * rot_F_ext.inv()).as_rotvec()  # 计算四元数误差
+    e_F[0:6] = np.array(F_d[0:6]) - np.array(F_ext[0:6])
 
-    for i in range(3):  # 位置的导纳控制
+    for i in range(6):  # 导纳控制
         # 应用导纳控制公式：M*(ddx_d - ddx) + D*(dx_d - dx) + K*(x_d - x) = (F_d - F_ext)
-        ddx_c[i] = ( D[i]* de[i] + K[i]* e[i] - e_F[i] ) / M[i] + ddx_d[i]
-        dx_c[i] = dx[i] + ddx_c[i] * dt
-        deltax_c[i] = dx_c[i] * dt
-
-    for i in range(3, 6):   # 姿态的导纳控制
-        ddx_c[i] = (D[i] * de[i] + K[i] * e[i] - e_F[i]) / M[i] + ddx_d[i]
+        ddx_c[i] = ( D[i] * de[i] + K[i] * e[i] - e_F[i] ) / M[i] + ddx_d[i]
         dx_c[i] = dx[i] + ddx_c[i] * dt
         deltax_c[i] = dx_c[i] * dt
 
     x_c[0:3] = np.array(x[0:3]) + np.array(deltax_c[0:3])               # 位置可以直接做加法
-    x_c[3:6] = ( R.from_rotvec(deltax_c[3:6]) * rot_x ).as_rotvec()    # 姿态需要左乘
+    x_c[3:6] = ( R.from_rotvec(deltax_c[3:6]) * rot_x ).as_rotvec()    # 姿态需要四元数左乘
     return x_c #, dx_c, ddx_c
 
 # 初始化力补偿滤波器实例，这次对每个方向的力都设计一个补偿器
