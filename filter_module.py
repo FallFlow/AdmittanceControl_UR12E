@@ -84,6 +84,62 @@ class RCLowPassFilter:
         return filtered
 
 
+class KalmanFilter:
+    """针对6轴力/力矩传感器的卡尔曼滤波器"""
+
+    def __init__(self, Q=0.01, R=1.0, initial_value=None):
+        """
+        初始化卡尔曼滤波器
+
+        参数:
+        Q             -- 过程噪声协方差 (Process Noise Covariance)
+                         值越小，系统越趋向于相信预测值（更平滑、延迟更大）
+                         值越大，系统越趋向于相信新测得的变化（灵敏度高、波动大）
+        R             -- 测量噪声协方差 (Measurement Noise Covariance)
+                         值越大，代表传感器噪声越大，滤波器会更多地抑制噪声
+                         针对UR12e，如果噪声是±5N，R可以尝试设置在10.0~100.0之间
+        initial_value -- 初始值，应为6元素数组，默认为零向量
+        """
+        # 过程噪声和测量噪声的参数（可以是标量，也可以是6元素数组）
+        self.Q = np.ones(6) * Q
+        self.R = np.ones(6) * R
+
+        # 状态估计值 (Estimated State)
+        self.x = np.zeros(6) if initial_value is None else np.array(initial_value)
+
+        # 估计误差协方差 (Estimated Error Covariance)
+        # 初始设为 1.0，滤波器运行几次后会快速收敛
+        self.P = np.ones(6)
+
+    def update(self, current_input):
+        """
+        更新滤波器状态并返回滤波后的值
+
+        参数:
+        current_input -- 当前传感器原始读数，应为6元素数组 (list 或 np.array)
+
+        返回:
+        滤波后的6元素数组 (np.array)
+        """
+        z = np.array(current_input)
+
+        # --- 第一步：预测 (Predict) ---
+        # 假设状态是不变的 (x_k = x_{k-1})
+        # 预测协方差 P_k = P_{k-1} + Q
+        self.P = self.P + self.Q
+
+        # --- 第二步：更新 (Update) ---
+        # 1. 计算卡尔曼增益 K = P / (P + R)
+        K = self.P / (self.P + self.R)
+
+        # 2. 更新状态估计值 x = x + K * (z - x)
+        self.x = self.x + K * (z - self.x)
+
+        # 3. 更新协方差 P = (1 - K) * P
+        self.P = (1 - K) * self.P
+
+        return self.x.copy()
+
 
 # 主循环示例
 if __name__ == "__main__":

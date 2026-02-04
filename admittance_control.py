@@ -45,7 +45,7 @@ time.sleep(1)
 """
 传感器零漂补偿
 由于传感器零点漂移较严重，所以要进行零漂补偿
-滤波器的相关函数见filter.py
+滤波器的相关函数见filter_module.py
 """
 comp_filter = filter_module.MoveMeanFilter(window_size=15)   # 建立传感器力补偿的滤波器实例，使用滑动平均值滤波器，窗口长度15
 for i in range(100):    # 每0.02秒取一次末端六维力数据，循环100次，将滤波结果存在F_ext_comp中
@@ -56,7 +56,7 @@ F_ext = rtde_recv.getActualTCPForce() - F_ext_comp  #将实测的外部力减去
 """
 六维力传感器信号滤波
 由于传感器噪声较严重，所以要进行信号滤波
-滤波器的相关函数见Filter.py
+滤波器的相关函数见filter_module.py
 """
 F_ext_filter = filter_module.RCLowPassFilter(alpha=0.35, initial_value=F_ext)  # 建立外部力低通滤波器实例
 

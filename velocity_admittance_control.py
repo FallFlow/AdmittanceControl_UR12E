@@ -6,14 +6,14 @@ import time
 import filter_module
 
 # 创建RTDE接收接口实例
-rtde_c = RTDEControl("192.168.0.100")
-rtde_recv = RTDEReceive("192.168.0.100")  # 机器人IP
-rtde_io_c = RTDEIO("192.168.0.100")
+rtde_c = RTDEControl("192.168.31.100")
+rtde_recv = RTDEReceive("192.168.31.100")  # 机器人IP
+rtde_io_c = RTDEIO("192.168.31.100")
 
 pi = np.pi
 
 # 初始化
-q_init = [pi/2, -pi/2, pi/2, -pi, -pi/2, 0]   # 初始化机器人位置
+q_init = [pi, -pi/2, pi/2, -pi/2, pi/2, -3*pi/4]   # 初始化机器人位置
 rtde_c.moveJ(q_init)    # 在关节空间下线性移动到该位置
 time.sleep(1)   # 阻塞1秒使末端力传感器稳定
 
@@ -37,13 +37,15 @@ dx_d  = [0, 0, 0, 0, 0, 0]   # 期望速度设置为0，即希望机械臂保持
 ddx_d = [0, 0, 0, 0, 0, 0]
 F_d   = [0, 0, 0, 0, 0, 0]
 
+rtde_c.setPayload(3.88, [0.015, 0.01, 0.145])
+rtde_c.setTcp([0.015, 0.01, 0.145, 0.0, 0.0, 0.0])
 rtde_c.zeroFtSensor()   # 将末端六维力传感器置零
 time.sleep(1)
 
 """
 传感器零漂补偿
 由于传感器零点漂移较严重，所以要进行零漂补偿
-滤波器的相关函数见filter.py
+滤波器的相关函数见filter_module.py
 """
 comp_filter = filter_module.MoveMeanFilter(window_size=15)   # 建立传感器力补偿的滤波器实例，使用滑动平均值滤波器，窗口长度15
 for i in range(100):    # 每0.02秒取一次末端六维力数据，循环100次，将滤波结果存在F_ext_comp中
@@ -54,14 +56,14 @@ F_ext = rtde_recv.getActualTCPForce() - F_ext_comp  #将实测的外部力减去
 """
 六维力传感器信号滤波
 由于传感器噪声较严重，所以要进行信号滤波
-滤波器的相关函数见Filter.py
+滤波器的相关函数见filter_module.py
 """
-F_ext_filter = filter_module.RCLowPassFilter(alpha=0.35, initial_value=F_ext)  # 建立外部力低通滤波器实例
-
+# F_ext_filter = filter_module.RCLowPassFilter(alpha=0.35, initial_value=F_ext)  # 建立外部力低通滤波器实例
+F_ext_filter = filter_module.KalmanFilter(Q=100, R=1.0, initial_value=F_ext)
 # 设计导纳控制参数
-M = [0.4, 0.4, 0.4, 0.01, 0.01, 0.01]   # 惯性矩阵
-D = [8, 8, 8, 0.004, 0.004, 0.004]      # 阻尼矩阵
-dt= 0.02                                # 离散时间，后面会用到
+M = [1, 1, 1, 0.01, 0.01, 0.01]   # 惯性矩阵
+D = [50.0, 50.0, 50.0, 0.006, 0.006, 0.005]      # 阻尼矩阵
+dt= 0.005                                # 离散时间，后面会用到
 # 由于传感器噪声严重，设置死区
 Deadband = [5, 5, 5, 0.5, 0.5, 0.5]
 
@@ -116,11 +118,9 @@ def ExternalForceComp():
             F_ext_comp[i] = comp[i].update(F_ext[i])
     return
 
-
-print('Start')
-
 rtde_io_c.setSpeedSlider(0.5)
 
+print('Start')
 while True:
     t_start = rtde_c.initPeriod()   # 和结尾的rtde_c.waitPeriod(t_start)一起，控制while循环时间为dt
 
